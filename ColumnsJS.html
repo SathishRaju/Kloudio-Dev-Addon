@@ -1,0 +1,46 @@
+<script>
+
+var app = angular.module('columnsModule',[]);
+
+
+app.controller('ColumnsCtrl', function($scope){
+    $scope.cols = null;
+    $scope.currentQuery = {};
+    $scope.addCols = addCols;
+    $scope.buttonText = "Add Columns";
+    function loadCurrentQuery()
+    {
+        google.script.run.withSuccessHandler(function(data) { if(data && data.query) {$scope.currentQuery = data.query; $scope.cols = data.cols;$scope.$apply();}}).getQueryAndCols_();
+    }
+    
+    loadCurrentQuery();
+    
+        
+    function onFailure(error)
+    {
+        alert("onFailure: " + error);        
+    }
+    
+    function onSuccess(error)
+    {
+       google.script.host.close();
+    }    
+    
+    function addCols()
+    {
+    //alert('inside refreshData...');
+      $scope.buttonText = "Adding...";
+      var colsToBeAdded = [];
+      if($scope.cols != null)
+      {
+        colsToBeAdded = $scope.cols.filter(function(el) { return el.visible; });
+      }
+      //alert('going to call getData..');
+     
+     google.script.run.withSuccessHandler(onSuccess)
+     .withFailureHandler(onFailure).addColsToTable_($scope.currentQuery, colsToBeAdded);
+    }
+    
+});
+
+</script>

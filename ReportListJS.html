@@ -1,0 +1,120 @@
+<script>
+(function () {
+  'use strict';
+var app = angular.module('app',['angularMoment']);    
+
+app.controller('ReportListCtrl', function($scope,moment){
+
+    $scope.isLoading = true;
+    $scope.reportsInfo = [];
+    $scope.reports = [];
+    $scope.jobsInfo = [];
+    $scope.selectSheet = selectSheet;
+    $scope.getFormattedDate = getFormattedDate;
+    
+    function loadCurrentReports()
+    {
+        $scope.isLoading = true;
+        google.script.run.withSuccessHandler(function(data) { 
+        $scope.reports = data.reports;
+        $scope.reportsInfo = data.reportsInfo; 
+        $scope.jobsInfo = data.jobsInfo;
+        console.log('jobsInfo', data.jobsInfo);
+        massageData();
+        $scope.isLoading = false;
+        $scope.$apply();
+        }).withFailureHandler(onFailure).getCurrentReports();
+    }
+    
+    function massageData()
+    {
+      $scope.reports.forEach(function(report){
+        console.log('report', report);
+        console.log('reportRunInfo', report.runInfo);
+        var report_info = getReportInfo(report.reportId);
+        report.reportInfo = report_info;
+        var job_info = getJobInfo(report.spreadsheetId,report.sheetId);
+        console.log('jobinfo', job_info);
+        report.jobInfo = job_info;
+      });
+    }
+    
+    function getReportInfo(report_id)
+    {
+       if($scope.reportsInfo)
+       {
+       var reports = $scope.reportsInfo.filter(function(ri)
+       {
+           return ri.key == report_id;
+       });
+       if(reports && reports.length > 0)
+           return reports[0];
+       return null;
+       }
+       else
+       {
+         return null;
+       }
+    }
+    
+    function getJobInfo(spreadsheetId, sheetId)
+    {
+       if($scope.jobsInfo){
+       var jis = $scope.jobsInfo.filter(function(ji)
+       {
+          return ji.spreadsheetId == spreadsheetId && ji.sheetId == sheetId;
+       });
+       if(jis && jis.length > 0)
+         return jis[0];
+       return null;
+       }
+       else
+         return null;
+    }    
+    
+    function onFailure(error)
+    {
+        $scope.isLoading = false;
+        alert("An error occurred while retrieving the reports information. Please try again later!");        
+    }    
+    
+    function getFormattedDate(date1, date2)
+    {
+       console.log('getFormattedDate...');
+       var offset = moment().utcOffset();
+       var d1 =  moment.utc(date1).utcOffset(offset);
+       console.log('date1:' , d1);
+       if(date2)
+       {
+         console.log('date2 is there...');
+         var d2 = moment(date2);
+         console.log('date2:', d2);
+          if(d2.isAfter(d1))
+            return d2.format("L LT");
+          else
+            return d1.format("L LT");
+       }
+       else
+         return d1.format("L LT");
+    }
+    
+    loadCurrentReports();
+    
+    function onFailureSelectSheet(error)
+    {
+        $scope.isLoading = false;
+        alert("An error occurred while selecting the sheet. Please try again later!");        
+    }  
+    
+    function selectSheet(sheetName)
+    {
+        google.script.run.withSuccessHandler(function(data) { 
+        }).withFailureHandler(onFailureSelectSheet).selectSheet(sheetName);      
+    }
+         
+});
+})();
+
+</script>
+
+

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Kloudio Google sheets addon</title>
+   <?!=include( 'Stylesheet'); ?>
+        <style>
+            .uk-accordion-title {
+                font-size: 14px;
+            }
+            .sidebar {
+                -moz-box-sizing: border-box;
+                box-sizing: border-box;
+                overflow-y: auto;
+                position: absolute;
+                width: 100%;
+            }
+            .branding-below {
+                bottom: 20px;
+                top: 0;
+            }
+            .bottom,
+            .bottom-left,
+            .button-bar {
+                bottom: 0;
+                position: absolute;
+                border-top: 1px solid #efefef;
+                background: #fff;
+            }
+            .logo {
+                width: 150px;
+                height: 53px;
+            }
+            .uk-list>li:nth-child(n+2), .uk-list>li>ul{
+              margin-top:0;
+            }
+            li.report-item{
+            padding: 10px;
+    border-bottom: 1px solid #efefef;
+    cursor: pointer;
+            }
+            li.report-item:hover{
+             background: #efefef;
+            }
+            .report-info{
+                font-size: 0.8em;
+                font-weight: 200;
+            }
+            .job-info{
+                font-size: 0.8em;
+                font-weight: 200;
+            }
+            .info-label{
+              font-weight:300;
+              font-weight:bold;
+            }
+        </style>
+</head>
+
+<body ng-app="app">
+    <div class="app-loading">
+        <p align="center">
+            <img src="https://s3-us-west-1.amazonaws.com/kloudioforgoogle/rotate.gif">
+        </p>
+    </div>
+    <div class="app-wrapper sidebar branding-below" style="display:none;">
+        <div ng-controller="ReportListCtrl" ng-if="!isLoading">
+
+           <? if(trialText !== '') { ?>
+              <div class="<?= bgColor ?>" uk-alert ng-if="!isLoading">
+                  <p align="center"><?=trialText ?></p>
+                  <p align="center"><button class="uk-button uk-button-small uk-button-primary"><?=upgradeText?></button></p>
+              </div>
+          <? } ?>
+        <p align="center" ng-if="isLoading">
+            <img src="https://s3-us-west-1.amazonaws.com/kloudioforgoogle/rotate.gif">
+        </p>
+        <div style="background: #efefef;padding:10px 5px;vertical-align: middle;margin-bottom: 10px;" ng-if="!isLoading" data-uk-sticky>
+            <h5 style="padding:0;vertical-align: middle;margin:0"><span style="font-weight:400">Reports in Current Spreadsheet</span></h5>
+        </div>
+         <div ng-if="!isLoading && (!!!reports || reports.length == 0) ">
+             <div uk-alert ng-if="!isLoading">
+                  <p align="center">There are no Kloudio reports in this spreadsheet.</p>
+              </div>
+         </div>
+          <ul class="uk-list" ng-if="!isLoading && reports && reports.length > 0">
+               <li ng-repeat="report in reports" class="report-item" ng-click="selectSheet(report.sheetName)">
+                 <div class="uk-container">
+                    <div class="sheet-info">{{report.sheetName}} </div>
+                    <div class="report-info"><span class="info-label">Report:</span> {{report.reportInfo.queryName}}</div>
+                     
+                     <div class="job-info" ng-if="!!!report.jobInfo && report.runInfo">
+                        <div><span class="info-label">Last Refresh:</span> {{getFormattedDate(report.runInfo.lastRefreshed)}}</div>
+                    </div>
+                     <div class="job-info" ng-if="report.jobInfo">
+                        <div><span class="info-label">Last Refresh:</span> {{getFormattedDate(report.jobInfo.lastRun, report.runInfo ? report.runInfo.lastRefreshed : null)}}</div>
+                        <div><span class="info-label">Next Refresh:</span> {{getFormattedDate(report.jobInfo.nextRun,null)}}</div>
+                    </div>
+                 </div>
+               </li> 
+           </ul>           
+        </div>
+    </div>
+    <div class="sidebar bottom">
+        <p align="center" style="margin:0;padding:0">
+            <img class="logo" src="https://s3.amazonaws.com/kloudioassets/images/kloudioleft.png">
+        </p>
+    </div>
+
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+    <script type="text/javascript" src="https://s3.amazonaws.com/kloudioassets/gsheets/js/uikit.min.js"></script>
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.2/angular.min.js"></script>
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.2/angular-aria.min.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.10.6/moment.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/angular-moment/1.0.1/angular-moment.min.js"></script>
+    <?!=include( 'ReportListJS'); ?>
+        <script>
+            $(document).ready(function() {
+                $('.app-wrapper').fadeIn(1000);
+                $('.app-loading').css('display', 'none');
+            });
+        </script>
+
+</body>
+
+</html>

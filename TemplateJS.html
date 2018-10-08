@@ -1,0 +1,152 @@
+<script>
+(function ($) {
+  'use strict';
+var app = angular.module('app',[]);
+ 
+app.controller('TemplatesCtrl', function($scope, $timeout, $q){
+    $scope.cols = null;
+    $scope.params = null;
+    var self  = this;
+    $scope.insertTemplate = insertTemplate;
+    $scope.templateInserted = false;
+    $scope.inProgress = false;
+    $scope.isLoading = true;
+    $scope.selected  = {template : null};
+    $scope.templateChanged = templateChanged;
+    $scope.schedule = {enabled: true};
+    $scope.timezones = [];
+    $scope.schRunning = false;
+    $scope.errors = '';
+        
+     loadAll(); 
+     
+    
+    function onFailure(error)
+    {
+        //alert("onFailure: " + error);
+        
+        google.script.host.close();
+    }
+    
+    function onSuccess(error)
+    {
+        //alert("onSuccess");
+    }    
+    
+    function templateChanged()
+    {
+      alert('templateChanged...');
+     // alert($scope.selectedTemplate.templateName);
+    }
+    
+    
+    function insertTemplate()
+    {
+      $scope.buttonText = 'Please wait...';
+      $scope.inProgress = true;
+      google.script.run.withSuccessHandler(function(data) {$scope.inProgress=false; $scope.templateInserted = true; $scope.$apply(); })
+     .withFailureHandler(onFailure).insertTemplate($scope.selected.template);
+    }
+    
+    
+    function loadAll() {
+       google.script.run.withSuccessHandler(function(data)
+       { 
+          $scope.myTemplates = data.templates ? data.templates.map(function(template) { return { value: template, display: template.templateName};}) : []; 
+          $scope.timezones = data.timezones;
+          $scope.currentUser = data.user;
+          $scope.isLoading = false;
+         // console.log('myTemplates', $scope.myTemplates);
+          $scope.$apply();
+       
+       }).getTemplates();
+    }
+    
+ function scheduleChanged($event)
+   {
+  //alert('Changed to ' + $scope.schedule.frequency);
+      if($scope.schedule.frequency == 'Minute')
+      {
+         if($scope.currentUser && $scope.currentUser.planName !== 'Enterprise' && $scope.currentUser.planName !== 'Premium')
+         {
+             $scope.errors = "Minute Refreshes are only available in Premium and Enterprise plans. Please consider upgrading your plan.";  
+             $scope.schedule.frequency = null;
+             return;
+         }
+      }
+      else
+      {
+         $scope.errors = "";
+      }
+   }
+               
+    function onSchFailure(error)
+    {
+        $scope.schRunning = false;
+        alert("An error occurred while saving the schedule information. Please try again later!");        
+    }
+    
+    function onSchSuccess(error)
+    {
+       $scope.schRunning = false;
+       google.script.host.close();
+    }    
+    
+    
+    function updateSchedule()
+    {
+    //alert('inside refreshData...');
+      $scope.errors = "";
+      if(!!!$scope.schedule.frequency)
+      {
+        $scope.errors =  "Frequency cannot be blank!";
+        return;
+      }
+      
+      if($scope.schedule.frequency == 'Hourly' && !!!$scope.schedule.minute)
+      {
+         $scope.errors = "Minute Interval cannot be blank";
+         return;
+      }      
+      if($scope.schedule.frequency == 'Weekly' && !!!$scope.schedule.day)
+      {
+         $scope.errors = "Day cannot be blank";
+         return;
+      }
+      if($scope.schedule.frequency == 'Monthly' && !!!$scope.schedule.day)
+      {
+         $scope.errors = "Date cannot be blank";
+         return;
+      }        
+      
+      if(($scope.schedule.frequency == 'Hourly' || $scope.schedule.frequency == 'Minute') && !!!$scope.schedule.minute)
+      {
+         $scope.errors = "Minute Interval cannot be blank";
+         return;
+      }
+      
+      if(($scope.schedule.frequency == 'Daily' || $scope.schedule.frequency == 'Weekly' || $scope.schedule.frequency == 'Monthly') && (!!!$scope.schedule.hour || !!!$scope.schedule.minute))
+      {
+         $scope.errors = "Hour/Minute cannot be blank";
+         return;
+      }
+      
+      if(($scope.schedule.frequency == 'Daily' || $scope.schedule.frequency == 'Weekly' || $scope.schedule.frequency == 'Monthly') && !!!$scope.schedule.timezone)
+      {
+         $scope.errors = "Timezone cannot be blank";
+         return;
+      }      
+          
+      $scope.schedule.job_type = 'TEMPLATE';
+      $scope.buttonText = "Updating...";
+      $scope.schRunning = true;
+     google.script.run.withSuccessHandler(onSchSuccess)
+     .withFailureHandler(onSchFailure).updateSchedule($scope.schedule);
+     }
+    
+    
+});
+})();
+
+</script>
+

@@ -1,0 +1,43 @@
+<?!= include('ParamStylesheet'); ?>
+<?!= include('ColumnsJS'); ?>
+<style>
+.branding-below {
+  bottom: 56px;
+  top: 0;
+}
+</style>
+
+<body ng-app="columnsModule" ng-cloak>
+
+   <div ng-controller="ColumnsCtrl" >
+   
+
+<div ng-if="cols == null" >
+<p align="center" ><img src="https://s3-us-west-1.amazonaws.com/kloudioforgoogle/rotate.gif"></p>
+</div>
+<div ng-if="cols != null && cols.length == 0" >
+   <p align="left" >There are no additional columns available</p>
+</div>
+ <div  ng-if="cols != null && cols.length > 0">
+   <form name="columnsForm">
+    <div class="sidebar branding-below" >
+    <div class="form-group" ng-repeat="col in cols">
+      <input type="checkbox" id="{{col.columnName}}" ng-model="col.visible">
+      <label for="{{col.columnName}}">{{col.caption}}</label>
+    </div>
+    </div>
+    <div class="sidebar bottom">
+     <div class="block">
+       <button ng-class="buttonText == 'Add Columns' ? 'blue' : 'gray'" id="addButton" ng-click="addCols();">{{buttonText}}</button>
+       <button onClick="google.script.host.close();">Cancel</button>
+     </div>
+    </div>
+   </form>
+ </div>
+</div>
+
+</body>
+
+
+
+

@@ -1,0 +1,108 @@
+<script>
+(function () {
+  'use strict';
+var app = angular.module('app',['720kb.datepicker']);    
+
+app.controller('ParamCtrl', function($scope){
+    $scope.params = null;
+    $scope.paramVals = {};
+    $scope.currentQuery = {};
+    $scope.refreshData = refreshData;
+    $scope.buttonText = "Refresh";
+    $scope.queryRunning = false;
+    $scope.getParamValue = getParamValue;
+    $scope.selectData = {};
+    $scope.selectParams = {selected: [] };
+    $scope.paramValues = {};
+    $scope.paramVals = [];
+    $scope.getParamValue = getParamValue;
+    $scope.isLoading = true;
+    
+    function loadCurrentQuery()
+    {
+        $scope.isLoading = true;
+        google.script.run.withSuccessHandler(function(data) { 
+        
+        $scope.currentQuery = data.query; 
+        $scope.params = data.query.queryParams;
+        $scope.paramVals = data.paramVals;
+        data.paramVals.forEach(function(qp)
+        {
+          $scope.paramValues[qp.param_name] = qp.param_val;
+        });
+        $scope.selectData = data.selectData;
+        $scope.isLoading = false;
+        $scope.$apply();
+        }).getCurrentQueryWithParams();
+    }
+    
+    loadCurrentQuery();
+  
+        
+    function getParamValue(param_name){
+      var param = $scope.paramVals ? $scope.paramVals.filter(function(item){ return item.param_name == param_name;})[0] : null;
+      if(param)
+      {         
+         return param.param_val;
+      }
+      else
+        return '';
+    }
+    
+    function onFailure(error)
+    {
+        $scope.queryRunning = false;
+        alert("An error occurred while refreshing the data. Please try again later!");        
+    }
+    
+    function onSuccess(error)
+    {
+       $scope.queryRunning = false;
+       google.script.host.close();
+    }    
+    
+    function getParamValue(paramName){
+       return $scope.paramVals[paramName];
+    }
+    
+    function refreshData()
+    {
+    //alert('inside refreshData...');
+      $scope.buttonText = "Refreshing...";
+      $scope.queryRunning = true;
+      var parameters = [];
+      if($scope.params != null)
+      {
+           $scope.params.forEach(function(p) {
+         
+          if(!!!p.operator || p.operator != 'between')
+          {
+            parameters.push({param_name: p.paramName, param_val: $scope.paramValues[p.paramName]});
+          }
+          else
+          {
+          
+           if(p.paramDataType == 'Date'  || p.paramType === 'Date')
+           {
+             var val1 = $scope.paramValues[p.paramName + '-from'] ? moment($scope.paramValues[p.paramName + '-from']).format('MM/DD/YYYY') : '';
+             var val2 = $scope.paramValues[p.paramName + '-to'] ? moment($scope.paramValues[p.paramName + '-to']).format('MM/DD/YYYY') : '';
+            // alert('for param: ' + p.paramName + ' val1: ' + val1 + ' val2: ' + val2);
+             parameters.push({param_name: p.paramName, param_val: '', val1: val1, val2: val2});
+           }
+           else
+             parameters.push({param_name: p.paramName, param_val: '' , val1:$scope.paramValues[p.paramName + '-from'], val2: $scope.paramValues[p.paramName + '-to'] });
+          }
+        }); 
+      }
+      //alert('going to call getData..');
+     
+     google.script.run.withSuccessHandler(onSuccess)
+     .withFailureHandler(onFailure).getData($scope.currentQuery, parameters, true);
+    }
+    
+});
+})();
+
+</script>
+
+

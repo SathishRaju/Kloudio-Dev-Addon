@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <base target="_top">
+    <?!=include( 'Stylesheet'); ?>
+        <style>
+            html {
+                height: 100%;
+                background: #fff;
+            }
+        }
+        </style>
+</head>
+
+<body >
+    <div >
+        <p align="center" style="margin-top:50px">
+            <a style="text-decoration:none;" href="https://kloud.io" target="_blank">
+                <img src="https://s3.amazonaws.com/kloudioassets/kloudio_logo.png" />
+            </a>
+        </p>
+        <div class="uk-alert-danger" uk-alert>
+            <p align="center" style="padding:10px;"><?= upgradeText ?></p>
+        </div>
+        <p align="center" style="margin-top:30px">
+          <? if(admin || (trial && installMode !== 'On-Premise') ) { ?>
+            <a href="<?=upgradeUrl ?>" target="_blank" class="uk-button uk-button-primary"><?=upgradeButtonText ?></a>
+          <? } ?>
+          <br/>
+         <? if(!trial && (!admin || installMode == 'On-Premise')) { ?>
+            <span><?=contactText ?></span>
+          <? } ?>
+        </p>
+    </div>
+   
+</body>
+
+</html>
+
+
+
+
+

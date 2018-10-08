@@ -1,0 +1,128 @@
+
+<script>
+(function ($) {
+  'use strict';
+var app = angular
+      .module('app', []);
+
+app.controller('schCtrl', function($scope){
+    $scope.timezones  = [];
+    $scope.loading = true;
+    $scope.updateSchedule = updateSchedule;
+    $scope.buttonText = "Update Schedule";
+    $scope.queryRunning = false;
+    $scope.frequencyChanged = frequencyChanged;
+    $scope.frequencies = [];
+    $scope.errors = "";
+    $scope.inProgress = false;
+    $scope.isLoading = true;
+    $scope.currentUser = null;
+    $scope.isOfflineEnabled = false;
+    $scope.isNewSchedule = false;
+    $scope.isOverLimt = false;
+    
+    function loadCurrentSchedule()
+    {        
+        google.script.run.withSuccessHandler(function(data) { $scope.schedule = data.schedule === null ? {} : data.schedule; 
+        $scope.timezones = data.timezones;
+        $scope.frequencies = data.frequencies;
+        $scope.isLoading = false;
+        $scope.currentUser = data.user;
+        $scope.isNewSchedule = data.schedule === null;
+        $scope.isOverLimit = $scope.currentUser.jobsCount >= $scope.currentUser.jobLimit;
+        $scope.isOfflineEnabled = !!$scope.currentUser && $scope.currentUser.googleAuthCode;
+        $scope.$apply();}).withFailureHandler(onFailureLoad).getScheduleByCurrentSheet();
+    }    
+    
+    loadCurrentSchedule();
+    //loadTimeZones();
+    
+    function onFailureLoad(error)
+    {
+        $scope.isLoading = false;
+        alert("An error occurred while retrieving the schedule information. Please try again later!");        
+    }
+    
+    function onFailure(error)
+    {
+        $scope.inProgress = false;
+        alert("An error occurred while saving the schedule information. Please try again later!");        
+    }
+    
+    function onSuccess(error)
+    {
+       $scope.inProgress = false;
+       google.script.host.close();
+    }    
+    
+    function frequencyChanged($event)
+    {
+      //alert('Changed to ' + $scope.schedule.frequency);
+      if($scope.schedule.frequency == 'Minute')
+      {
+         if($scope.currentUser && $scope.currentUser.planName !== 'Enterprise' && $scope.currentUser.planName !== 'Premium')
+         {
+             $scope.errors = "Minute " + ($scope.schedule.job_type === "TEMPLATE" ? "Uploads" : "Refreshes") + " are only available in Premium and Enterprise plans. Please consider upgrading your plan.";  
+             $scope.schedule.frequency = null;
+             return;
+         }
+      }
+      else
+      {
+         $scope.errors = "";
+      }
+    }
+    
+    function updateSchedule()
+    {
+    //alert('inside refreshData...');
+      $scope.errors = "";
+      if(!!!$scope.schedule.frequency)
+      {
+        $scope.errors =  "Frequency cannot be blank!";
+        return;
+      }
+      
+      if($scope.schedule.frequency == 'Hourly' && !!!$scope.schedule.minute)
+      {
+         $scope.errors = "Minute Interval cannot be blank";
+         return;
+      }      
+      if($scope.schedule.frequency == 'Weekly' && !!!$scope.schedule.day)
+      {
+         $scope.errors = "Day cannot be blank";
+         return;
+      }
+      if($scope.schedule.frequency == 'Monthly' && !!!$scope.schedule.day)
+      {
+         $scope.errors = "Date cannot be blank";
+         return;
+      }        
+      
+      if(($scope.schedule.frequency == 'Hourly' || $scope.schedule.frequency == 'Minute') && !!!$scope.schedule.minute)
+      {
+         $scope.errors = "Minute Interval cannot be blank";
+         return;
+      }
+      
+      if(($scope.schedule.frequency == 'Daily' || $scope.schedule.frequency == 'Weekly' || $scope.schedule.frequency == 'Monthly') && (!!!$scope.schedule.hour || !!!$scope.schedule.minute))
+      {
+         $scope.errors = "Hour/Minute cannot be blank";
+         return;
+      }
+      
+      if(($scope.schedule.frequency == 'Daily' || $scope.schedule.frequency == 'Weekly' || $scope.schedule.frequency == 'Monthly') && !!!$scope.schedule.timezone)
+      {
+         $scope.errors = "Timezone cannot be blank";
+         return;
+      }      
+      
+      $scope.buttonText = "Updating...";
+      $scope.inProgress = true;
+     google.script.run.withSuccessHandler(onSuccess)
+     .withFailureHandler(onFailure).updateSchedule($scope.schedule);
+    }
+    
+});
+})();
+</script>

@@ -1,0 +1,767 @@
+<script>
+(function ($) {
+  'use strict';
+angular.module('am.multiselect', [])
+
+// from bootstrap-ui typeahead parser
+.factory('optionParser', ['$parse', function ($parse) {
+    var TYPEAHEAD_REGEXP = /^\s*([\s\S]+?)(?:\s+as\s+([\s\S]+?))?\s+for\s+(?:([\$\w][\$\w\d]*))\s+in\s+([\s\S]+?)$/;
+    return {
+        parse:function (input) {
+            var match = input.match(TYPEAHEAD_REGEXP);
+            if (!match) {
+                throw new Error(
+                    'Expected typeahead specification in form of "_modelValue_ (as _label_)? for _item_ in _collection_"' +
+                    ' but got "' + input + '".');
+            }
+            return {
+                itemName:match[3],
+                source:$parse(match[4]),
+                viewMapper:$parse(match[2] || match[1]),
+                modelMapper:$parse(match[1])
+            };
+        }
+    };
+}])
+
+.directive('amMultiselect', ['$parse', '$document', '$compile', '$interpolate', '$filter', 'optionParser',
+
+    function ($parse, $document, $compile, $interpolate, $filter, optionParser) {
+    return {
+        restrict: 'E',
+        require: 'ngModel',
+        link: function (originalScope, element, attrs, modelCtrl) {
+        // Redefine isEmpty - this allows this to work on at least Angular 1.2.x
+        var isEmpty = modelCtrl.$isEmpty;
+        modelCtrl.$isEmpty = function(value) {
+            return isEmpty(value) || (angular.isArray(value) && value.length == 0);
+        };
+
+        var exp = attrs.options,
+        parsedResult = optionParser.parse(exp),
+        isMultiple = attrs.multiple ? true : false,
+        required = false,
+        scope = originalScope.$new(),
+        changeHandler = attrs.change || angular.noop;
+
+        scope.items = [];
+        scope.header = 'Select';
+        scope.multiple = isMultiple;
+        scope.disabled = false;
+        scope.onBlur = attrs.ngBlur || angular.noop;
+
+        originalScope.$on('$destroy', function () {
+            scope.$destroy();
+        });
+
+        var popUpEl = angular.element('<am-multiselect-popup' +
+            (attrs.templateUrl ? (' template-url="' + attrs.templateUrl + '"'): '' ) +
+            '></am-multiselect-popup>');
+
+        // required validator
+        if (attrs.required || attrs.ngRequired) {
+            required = true;
+        }
+        attrs.$observe('required', function(newVal) {
+            required = newVal;
+        });
+
+        // watch disabled state
+        scope.$watch(function () {
+            return $parse(attrs.disabled)(originalScope);
+        }, function (newVal) {
+            scope.disabled = newVal;
+        });
+
+        // watch single/multiple state for dynamically change single to multiple
+        scope.$watch(function () {
+            return $parse(attrs.multiple)(originalScope);
+        }, function (newVal) {
+            isMultiple = newVal || false;
+        });
+
+        // watch option changes for options that are populated dynamically
+        scope.$watch(function () {
+            return parsedResult.source(originalScope);
+        }, function (newVal) {
+        if (angular.isDefined(newVal))
+            parseModel();
+        }, true);
+
+        // watch model change
+        scope.$watch(function () {
+            return modelCtrl.$modelValue;
+        }, function (newVal, oldVal) {
+        // when directive initialize, newVal usually undefined. Also, if model value already set in the controller
+        // for preselected list then we need to mark checked in our scope item. But we don't want to do this every time
+        // model changes. We need to do this only if it is done outside directive scope, from controller, for example.
+            if (angular.isDefined(newVal)) {
+                markChecked(newVal);
+                scope.$eval(changeHandler);
+            }
+            getHeaderText();
+            modelCtrl.$setValidity('required', scope.valid());
+        }, true);
+
+        function parseModel() {
+            scope.items.length = 0;
+            var model = parsedResult.source(originalScope);
+            if(!angular.isDefined(model)) return;
+            for (var i = 0; i < model.length; i++) {
+                var local = {};
+                local[parsedResult.itemName] = model[i];
+                scope.items.push({
+                    label: parsedResult.viewMapper(local),
+                    model: parsedResult.modelMapper(local),
+                    checked: false
+                });
+            }
+        }
+
+        parseModel();
+
+        element.append($compile(popUpEl)(scope));
+
+        function getHeaderText() {
+            if (is_empty(modelCtrl.$modelValue)) return scope.header = (attrs.msHeader!==undefined ? attrs.msHeader : 'Select');
+
+            if (isMultiple) {
+                if (attrs.msSelected) {
+                    scope.header = $interpolate(attrs.msSelected)(scope);
+                } else {
+                    if (modelCtrl.$modelValue.length == 1) {
+                        for(var i = 0; i < scope.items.length; i++) {
+                            if(scope.items[i].model === modelCtrl.$modelValue[0]) {
+                            scope.header = scope.items[i].label;
+                            }
+                        }
+                    } else {
+                    scope.header = modelCtrl.$modelValue.length + ' ' + 'selected';
+                    }
+                }
+            } else {
+                if(angular.isString(modelCtrl.$modelValue)){
+                    scope.header = modelCtrl.$modelValue;
+                } else {
+                    var local = {};
+                    local[parsedResult.itemName] = modelCtrl.$modelValue;
+                    scope.header = parsedResult.viewMapper(local) || scope.items[modelCtrl.$modelValue].label;
+                }
+            }
+        }
+
+        function is_empty(obj) {
+            if (angular.isNumber(obj)) return false;
+            if (obj && obj.length && obj.length > 0) return false;
+            for (var prop in obj) if (obj[prop]) return false;
+                return true;
+        };
+
+        scope.valid = function validModel() {
+            if(!required) return true;
+            var value = modelCtrl.$modelValue;
+            return (angular.isArray(value) && value.length > 0) || (!angular.isArray(value) && value != null);
+        };
+
+        function selectSingle(item) {
+            if (item.checked) {
+                scope.uncheckAll();
+            } else {
+                scope.uncheckAll();
+                item.checked = !item.checked;
+            }
+            setModelValue(false);
+        }
+
+        function selectMultiple(item) {
+            item.checked = !item.checked;
+            setModelValue(true);
+        }
+
+        function setModelValue(isMultiple) {
+            var value = null;
+
+            if (isMultiple) {
+                value = [];
+                angular.forEach(scope.items, function (item) {
+                    if (item.checked) value.push(item.model);
+                })
+            } else {
+                angular.forEach(scope.items, function (item) {
+                    if (item.checked) {
+                        value = item.model;
+                        return false;
+                    }
+                })
+            }
+            modelCtrl.$setViewValue(value);
+        }
+
+        function markChecked(newVal) {
+            if (!angular.isArray(newVal)) {
+                angular.forEach(scope.items, function (item) {
+                    if (angular.equals(item.model, newVal)) {
+                        scope.uncheckAll();
+                        item.checked = true;
+                        setModelValue(false);
+                        return false;
+                    }
+                });
+            } else {
+                angular.forEach(scope.items, function (item) {
+                    item.checked = false;
+                    angular.forEach(newVal, function (i) {
+                        if (angular.equals(item.model, i)) {
+                            item.checked = true;
+                        }
+                    });
+                });
+            }
+        }
+
+        scope.checkAll = function () {
+            if (!isMultiple) return;
+            var items = (scope.searchText && scope.searchText.label.length > 0) ? $filter('filter')(scope.items, scope.searchText) : scope.items;
+            angular.forEach(items, function (item) {
+                item.checked = true;
+            });
+            setModelValue(true);
+        };
+
+        scope.uncheckAll = function () {
+            var items = (isMultiple && scope.searchText && scope.searchText.label.length > 0) ? $filter('filter')(scope.items, scope.searchText) : scope.items;
+            angular.forEach(items, function (item) {
+                item.checked = false;
+            });
+            setModelValue(true);
+        };
+
+        scope.select = function (item) {
+            if (isMultiple === false) {
+                selectSingle(item);
+                scope.toggleSelect();
+            } else {
+                selectMultiple(item);
+            }
+        }
+        }
+    };
+}])
+
+.directive('amMultiselectPopup', ['$document', '$filter', function ($document, $filter) {
+    return {
+        restrict: 'E',
+        scope: false,
+        replace: true,
+        templateUrl: function (element, attr) {
+            return attr.templateUrl || 'multiselect.tmpl.html';
+        },
+        link: function (scope, element, attrs) {
+
+            scope.selectedIndex = null;
+            scope.isVisible = false;
+            scope.filteredItems = null;
+
+            scope.toggleSelect = function () {
+                if (element.hasClass('open')) {
+                    element.removeClass('open');
+                    $document.unbind('click', clickHandler);
+                    scope.$parent.$eval(scope.onBlur);
+                } else {
+                    element.addClass('open');
+                    $document.bind('click', clickHandler);
+                    scope.focus();
+                }
+            };
+
+            function clickHandler(event) {
+                if (elementMatchesAnyInArray(event.target, element.find(event.target.tagName))) {
+                    scope.$parent.$eval(scope.onBlur);
+                } else {
+                    element.removeClass('open');
+                    $document.unbind('click', clickHandler);
+                    scope.$apply();
+                }
+            }
+
+            scope.focus = function focus(){
+                var searchBox = element.find('input')[0];
+                if (searchBox) {
+                    searchBox.focus();
+                }
+            }
+
+            scope.keydown = function (event) {
+                var list = $filter('filter')(scope.items, scope.searchText);
+                var keyCode = (event.keyCode || event.which);
+
+                if(keyCode === 13){ // On enter
+                    if(list[scope.selectedIndex]){
+                        scope.select(list[scope.selectedIndex]); // (un)select item
+                    }
+                }else if(keyCode === 38){ // On arrow up
+                    scope.selectedIndex = scope.selectedIndex===null ? list.length-1 : scope.selectedIndex-1;
+                }else if(keyCode === 40){ // On arrow down
+                    scope.selectedIndex = scope.selectedIndex===null ? 0 : scope.selectedIndex+1;
+                }else{ // On any other key
+                    scope.selectedIndex = null;
+                }
+
+                if(scope.selectedIndex < 0){ // Select last in list
+                    scope.selectedIndex = list.length-1;
+                }else if(scope.selectedIndex > list.length-1){ // Set selection to first item in list
+                    scope.selectedIndex = 0;
+                }
+            };
+
+            var elementMatchesAnyInArray = function (element, elementArray) {
+                for (var i = 0; i < elementArray.length; i++)
+                    if (element == elementArray[i])
+                        return true;
+                return false;
+            }
+        }
+    }
+}]);
+angular.module("am.multiselect")
+.run(["$templateCache", 
+function($templateCache) {
+$templateCache.put("multiselect.tmpl.html",
+"<div class=\"uk-button-dropdown\" data-uk-dropdown=\"\" aria-haspopup=\"true\" aria-expanded=\"false\"> " + 
+                                "<button class=\"uk-button\"  ng-disabled=\"disabled\"> {{header}} <i class=\"uk-icon-caret-down\"></i></button> " + 
+                                "<div class=\"uk-dropdown uk-dropdown-scrollable uk-dropdown-autoflip uk-dropdown-top\" aria-hidden=\"true\" tabindex=\"\" style=\"top: -200px; left: 0px;\"> " +
+                                    "<ul class=\"uk-nav uk-nav-dropdown\"> " + 
+                                        "<input class=\"form-control input-sm\" type=\"text\" ng-model=\"searchText.label\" ng-keydown=\"keydown($event)\" autofocus=\"autofocus\" placeholder=\"Select\" /> " +
+                                        "<button class=\"btn btn-link btn-xs\" ng-click=\"checkAll()\" type=\"button\"><i class=\"glyphicon glyphicon-ok\"></i> Check all</button> " + 
+                                        "<button class=\"btn btn-link btn-xs\" ng-click=\"uncheckAll()\" type=\"button\"><i class=\"glyphicon glyphicon-remove\"></i> Uncheck all</button> " + 
+                                        "<li ng-repeat=\"i in items | filter: searchText\" ng-class=\"{\'selected\': $index === selectedIndex}\" > " +
+                                          "<a ng-click=\"select(i); focus()\"> " +
+                                           " <i class=\'glyphicon\' ng-class=\"{\'uk-icon-check-square-o\': i.checked, \'uk-icon-square-o\': !i.checked}\"></i> " +
+                                          "{{i.label}}" +
+                                          "</a> " + 
+                                        "</li>" +
+                                    "</ul>" +
+                                "</div>" +
+                            "</div>"
+
+);}]);
+
+
+
+  var app = angular.module('app', ['am.multiselect', '720kb.datepicker']);
+      
+   app.controller('ReportsCtrl', function($scope) {
+    $scope.isDisabled    = false;
+
+    $scope.querySearch   = querySearch;
+    //$scope.selectedItemChange = selectedItemChange;
+    $scope.searchTextChange   = searchTextChange;
+    $scope.paramValues = {};
+    $scope.paramOperators = {};
+    $scope.params = null;
+    $scope.paramsHash = {};
+    $scope.selectedQuery = {query: null};
+    $scope.queryRunning = false;
+    $scope.schRunning = false;
+    $scope.fetchData = fetchData;
+    $scope.insertAsFormula = insertAsFormula;
+    $scope.myQueries = null;
+    $scope.cols = null;
+    $scope.selectData = {};
+    $scope.selectedTab = 0;
+    $scope.timezones = [];
+    $scope.selectParams = {selected: null };
+   // $scope.selectParamsChanged = selectParamsChanged;
+    $scope.setSelectedParam = setSelectedParam;
+    $scope.selectFieldChanged = selectFieldChanged;
+    $scope.showModal = showModal;
+    $scope.selectedQueryChanged = selectedQueryChanged;
+    $scope.reportsTabActive = true;
+    $scope.scheduleTabActive = false;
+    $scope.showSchedule = false;
+    $scope.currentUser = null;
+   
+    
+    $scope.isLoading = false;
+    
+    loadAll();
+    
+
+    // ******************************
+    // Internal methods
+    // ******************************
+
+    /**
+     * Search for queries.
+     */
+    function querySearch (searchTxt) {
+      var results = searchTxt ? $scope.myQueries.filter( function(query) {return query.display.toLowerCase().indexOf(searchTxt.toLowerCase()) == 0;} ) : $scope.myQueries;
+      return results;
+    }
+
+    function searchTextChange(text) {
+      //$log.info('Text changed to ' + text);
+    }
+    
+    function selectedQueryChanged()
+    {
+      console.log('selectedQueryChanged', $scope.selectedQuery.query);
+      if($scope.selectedQuery.query && $scope.selectedQuery.query.queryParams && $scope.selectedQuery.query.queryParams.length > 0)
+       $scope.selectedQuery.query.queryParams.forEach(function(param){
+        $scope.paramsHash[param.paramName] = param;
+         if((param.paramType == 'Select' || param.paramType == 'Multi-Select') && param.paramValue ) {
+           if(param.paramValue.toUpperCase().startsWith('SELECT ')){
+               google.script.run.withSuccessHandler(function(data) { 
+               console.log('data is ...', data);
+               if(param.paramType == 'Select'){
+                  console.log('paramType is Select...');
+                   $scope.selectData[param.paramName] = data; 
+               }
+               else
+               {
+                  console.log('paramType is Multi-Select...', );
+                 $scope.selectData[param.paramName] = [];
+                 if(data && data.length > 0)
+                 {
+                   data.forEach(function(ele) {
+                     $scope.selectData[param.paramName].push({name: ele.display, id: ele.value});
+                    });
+                 }
+               }
+               $scope.$apply();
+             }).getSelectValues($scope.selectedQuery.query.key,param.paramName);
+           }
+           else
+           {
+             $scope.selectData[param.paramName] = [];
+             if(param.paramType == 'Select')
+               $scope.selectData[param.paramName] = param.paramValue.split(',').map(function(item) { return {display: item, value: item};});
+             else
+             {
+                 $scope.selectData[param.paramName] = param.paramValue.split(',').map(function(item) { return {name: item, id: item};});
+             }
+           } 
+         }
+        });  
+        
+       /*setTimeout(function(){ $scope.$apply();
+         jQuery.UIkit.datepicker('.date', {format:"DD.MM.YYYY"})},100); */
+    }
+
+  /*  function selectedItemChange(item) {
+       $scope.selectedQuery.query = item.value;
+       // alert('query changed to' + $scope.selectedQuery.queryName);
+        $scope.cols = $scope.selectedQuery.query.availableCols; 
+        $scope.params = $scope.selectedQuery.query.queryParams;
+        $scope.selectParams.selected = [];
+        $scope.paramsHash = {};
+        var BreakException = {};
+        try{
+        $scope.params.forEach(function(param){
+        $scope.paramsHash[param.paramName] = param;
+        /*if(param.operator == 'between')
+        {
+          $scope.paramValues[param.paramName +'-from'] = '';
+          $scope.paramValues[param.paramName +'-to'] = '';
+        }
+        else
+        {
+          $scope.paramValues[param.paramName] = '';
+        }
+         
+         if(param.paramType == 'Select' && param.paramValue ) {
+           if(param.paramValue.toUpperCase().startsWith('SELECT ')){
+               google.script.run.withSuccessHandler(function(data) {
+               if(!data)
+                 throw BreakException;
+               $scope.selectData[param.paramName] = data; 
+               $scope.$apply();
+               }).getSelectValues($scope.selectedQuery.query.key,param.paramName);
+           }
+           else
+           {
+             //alert('select values' +  param.paramValue.split(','));
+             $scope.selectData[param.paramName] = param.paramValue.split(',').map(function(item) { return {display: item, value: item};});
+           } 
+         }
+        });
+        }
+        catch(ex)
+        {
+          
+        }
+       
+         setTimeout(function(){ $scope.$apply();$('.filters-dropdown').dropdown()},100);
+        
+    }
+    */
+    
+    function selectFieldChanged(index)
+    {
+       setTimeout(function(){$('.ui.accordion').accordion('close',index);}, 100);
+    }
+    
+    function getParamByName(param_name){
+     if($scope.params && $scope.params.length > 0)
+     {
+        $scope.params.forEach(function(p){
+          if(p.paramName === param_name)
+           return p;          
+        });
+     }
+     return null;
+    }
+
+   /*function selectParamsChanged(){
+     console.log('selectParamsChanged..' , $scope.selectParams.selected);
+     if(!!!$scope.selectParams.selected)
+       $scope.selectParams.selected = []; 
+       $scope.params.forEach(function(param){
+          param['selected'] = $scope.selectParams.selected.indexOf(param.paramName) > -1;
+          if(!param['selected'])
+            if($scope.paramValues[param.paramName])
+               $scope.paramValues[param.paramName] = '';          
+       });
+       
+       //$('.ui.accordion').accordion('refresh');
+        setTimeout(function(){$('.select-field').dropdown();}, 100);
+   }
+   */
+   
+   function showModal()
+   {
+     $('.ui.modal')
+     .modal('show');
+   }
+   
+   function setSelectedParam(param){
+   //alert('setSelectedParam..' + param.paramDisplayName);
+   console.log('setSelected for param: ', param);
+     if(!!!$scope.selectParams.selected)
+       $scope.selectParams.selected = [];
+     $scope.selectParams.push(param);
+   }
+
+    function onFailure(error)
+    {
+        console.log('onFailure...',error);
+        $scope.queryRunning = false;
+        $scope.isLoading = false;
+        $scope.$apply();
+       // google.script.host.close();
+    }
+    
+    /**
+     * Build `queries` list of key/value pairs
+     */
+     
+    function loadAll() {
+    console.log('loadAll...');
+    $scope.isLoading = true;
+       google.script.run.withSuccessHandler(function(data)
+       {
+          //alert('got data ' + data.queries.length);
+          if(data.success){
+          $scope.isLoading = false;
+          $scope.currentUser = data.user;
+          $scope.myQueries = data.queries ? data.queries.map(function(query) { return { value: query, display: query.queryName};}) : []; 
+          console.log('myQueries', $scope.myQueries);
+          $scope.timezones = data.timezones;
+          $scope.$apply();
+          }
+          
+       
+       }).withFailureHandler(onFailure).getQueries("");
+    }
+    
+    function fetchData(insertAsFormula)
+    {
+      console.log('fetchdata...');
+      
+      if(insertAsFormula) {
+         $scope.showSchedule = false;
+      }
+      else {
+        $scope.queryRunning = true;
+        $scope.showSchedule = false;
+        $scope.schedule = {enabled: true};
+      }
+      
+       
+      var parameters = [];
+      if($scope.selectedQuery.query && $scope.selectedQuery.query.queryParams && $scope.selectedQuery.query.queryParams.length >0 )
+      {
+        console.log('queryparams > 0');
+        $scope.selectedQuery.query.queryParams.forEach(function(p) {
+          console.log('for param:' , p);
+         
+          if(!!!p.operator || p.operator != 'between')
+          {
+             console.log('not between...');
+             if(p.paramDataType === 'Date' || p.paramType === 'Date')
+             {
+                console.log('this is date param..', p);
+                console.log('date param val', $scope.paramValues[p.paramName]);
+                var val =  $scope.paramValues[p.paramName] ? moment($scope.paramValues[p.paramName]).format(p.format ? p.format.toUpperCase() : 'YYYY-MM-DD') : '';
+                console.log('val', val);
+                parameters.push({param_name: p.paramName, param_val: val});
+                console.log({param_name: p.paramName, param_val: val});
+             }
+             else
+             {
+                 if(p.paramType == 'Multi-Select'){
+                   if($scope.paramValues[p.paramName] && $scope.paramValues[p.paramName].length > 0)
+                   {
+                     parameters.push({param_name: p.paramName, param_val: $scope.paramValues[p.paramName].map(function(ele){return ele.id;}).join(',') });
+                   }
+                 }
+                 else
+                   parameters.push({param_name: p.paramName, param_val: $scope.paramValues[p.paramName]});
+             }
+           
+           // console.log('after..',{param_name: p.paramName, param_val: $scope.paramValues[p.paramName]} );
+          }
+          else
+          {
+          
+           if(p.paramDataType == 'Date' || p.paramType =='Date')
+           {
+             var val1 = $scope.paramValues[p.paramName + '-from'] ? moment($scope.paramValues[p.paramName + '-from']).format(p.format ? p.format.toUpperCase() : 'YYYY-MM-DD') : '';
+             var val2 = $scope.paramValues[p.paramName + '-to'] ? moment($scope.paramValues[p.paramName + '-to']).format(p.format ? p.format.toUpperCase() : 'YYYY-MM-DD') : '';
+             //alert('for param: ' + p.paramName + ' val1: ' + val1 + ' val2: ' + val2);
+             parameters.push({param_name: p.paramName, param_val: '', val1: val1, val2: val2});
+           }
+           else
+             parameters.push({param_name: p.paramName, param_val: '' , val1:$scope.paramValues[p.paramName + '-from'], val2: $scope.paramValues[p.paramName + '-to'] });
+          }
+        }); 
+      }
+      
+      console.log('going to fetch data...');
+      google.script.run.withSuccessHandler(function(data) {
+      console.log('success...');
+      if(insertAsFormula)
+        return;
+      $scope.queryRunning=false;
+      
+      if(data.success){
+      if($scope.currentUser && $scope.currentUser.planName !== 'Starter' && $scope.currentUser.jobsCount < $scope.currentUser.jobLimit)
+      {
+          $scope.showSchedule = true;     
+          $scope.reportsTabActive = false;
+          $scope.scheduleTabActive = true;
+           $scope.$apply();
+      }
+    }
+    else
+    {
+      $scope.$apply();
+     }
+     UIkit.notification({
+    message: "<span uk-icon='icon: check'></span> Report run successful!",
+    status: 'primary',
+    pos: 'bottom-center',
+    timeout: 5000
+});
+   }).withFailureHandler(onFailure).getData($scope.selectedQuery.query, parameters, false,null,null,insertAsFormula);
+     
+  }
+    
+   function insertAsFormula() {
+      console.log('insertAsFormula...');
+      fetchData(true);
+    }
+
+    
+   
+    $scope.updateSchedule = updateSchedule;
+    $scope.schedule = {enabled: true};
+    $scope.buttonText = "Update Schedule";
+    $scope.scheduleChanged = scheduleChanged;
+    $scope.errors = "";
+   
+   function scheduleChanged($event)
+   {
+  //alert('Changed to ' + $scope.schedule.frequency);
+      if($scope.schedule.frequency == 'Minute')
+      {
+         if($scope.currentUser && $scope.currentUser.planName !== 'Enterprise' && $scope.currentUser.planName !== 'Premium')
+         {
+             $scope.errors = "Minute Refreshes are only available in Premium and Enterprise plans. Please consider upgrading your plan.";  
+             $scope.schedule.frequency = null;
+             return;
+         }
+      }
+      else
+      {
+         $scope.errors = "";
+      }
+   }
+               
+    function onSchFailure(error)
+    {
+        $scope.schRunning = false;
+        alert("An error occurred while saving the schedule information. Please try again later!");        
+    }
+    
+    function onSchSuccess(error)
+    {
+       $scope.schRunning = false;
+       google.script.host.close();
+    }    
+    
+    
+    function updateSchedule()
+    {
+    //alert('inside refreshData...');
+      $scope.errors = "";
+      if(!!!$scope.schedule.frequency)
+      {
+        $scope.errors =  "Frequency cannot be blank!";
+        return;
+      }
+      
+      if($scope.schedule.frequency == 'Hourly' && !!!$scope.schedule.minute)
+      {
+         $scope.errors = "Minute Interval cannot be blank";
+         return;
+      }      
+      if($scope.schedule.frequency == 'Weekly' && !!!$scope.schedule.day)
+      {
+         $scope.errors = "Day cannot be blank";
+         return;
+      }
+      if($scope.schedule.frequency == 'Monthly' && !!!$scope.schedule.day)
+      {
+         $scope.errors = "Date cannot be blank";
+         return;
+      }        
+      
+      if(($scope.schedule.frequency == 'Hourly' || $scope.schedule.frequency == 'Minute') && !!!$scope.schedule.minute)
+      {
+         $scope.errors = "Minute Interval cannot be blank";
+         return;
+      }
+      
+      if(($scope.schedule.frequency == 'Daily' || $scope.schedule.frequency == 'Weekly' || $scope.schedule.frequency == 'Monthly') && (!!!$scope.schedule.hour || !!!$scope.schedule.minute))
+      {
+         $scope.errors = "Hour/Minute cannot be blank";
+         return;
+      }
+      
+      if(($scope.schedule.frequency == 'Daily' || $scope.schedule.frequency == 'Weekly' || $scope.schedule.frequency == 'Monthly') && !!!$scope.schedule.timezone)
+      {
+         $scope.errors = "Timezone cannot be blank";
+         return;
+      }      
+          
+      $scope.buttonText = "Updating...";
+      $scope.schRunning = true;
+     google.script.run.withSuccessHandler(onSchSuccess)
+     .withFailureHandler(onSchFailure).updateSchedule($scope.schedule);
+    }    
+
+
+  });
+})();
+</script>
